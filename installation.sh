@@ -1,22 +1,27 @@
+
 #!/bin/bash
 set -e
 
 # ============================================
-# AST Miner CLI Installation Complète (Version propre)
+# AST Miner CLI Installation Complète (Zero Prompt)
 # Ubuntu LTS, Ryzen 9 9950X, 32 Go DDR5
-# Installation dans ~/miner/astatine
+# Installation dans /miner/astatine
 # ============================================
 
 # --- Variables ---
-INSTALL_BASE="$HOME/miner"
+INSTALL_BASE="/miner"
 INSTALL_DIR="$INSTALL_BASE/astatine"
 MINER_REPO="https://github.com/Jecta-ai/ast-miner-cli.git"
 ENV_FILE="$INSTALL_DIR/.astminer_env"
 SERVICE_FILE="$HOME/.config/systemd/user/astminer.service"
 USER_NAME="$USER"
 
+# --- Seed phrase à configurer ici ---
+AST_SEED="VOTRE_SEED_PHRASE_ICI"
+
 # --- Créer le dossier d'installation ---
-mkdir -p "$INSTALL_DIR"
+sudo mkdir -p "$INSTALL_DIR"
+sudo chown $USER_NAME:$USER_NAME "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
 # --- Installer les paquets nécessaires ---
@@ -47,22 +52,16 @@ else
     git reset --hard origin/main
 fi
 
-# --- Autoriser Git safe directory (pour le user) ---
+# --- Autoriser Git safe directory ---
 git config --global --add safe.directory "$INSTALL_DIR"
 
 # --- Installer les dépendances npm ---
 npm install
 
-# --- Configuration de la seed phrase ---
-if [ ! -f "$ENV_FILE" ]; then
-    read -sp "Entrez votre seed phrase AST : " AST_SEED
-    echo
-    echo "AST_SEED='$AST_SEED'" > "$ENV_FILE"
-    chmod 600 "$ENV_FILE"
-    echo "[INFO] Seed phrase enregistrée dans $ENV_FILE"
-else
-    echo "[INFO] Seed phrase déjà configurée."
-fi
+# --- Configuration de la seed phrase dans un fichier sécurisé ---
+echo "AST_SEED='$AST_SEED'" > "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+echo "[INFO] Seed phrase configurée dans $ENV_FILE"
 
 # --- Détection du script npm à lancer ---
 AVAILABLE_SCRIPTS=$(npm run 2>/dev/null)
@@ -87,13 +86,11 @@ After=network.target
 Type=simple
 EnvironmentFile=$ENV_FILE
 WorkingDirectory=$INSTALL_DIR
-ExecStart=/bin/bash -c "git fetch --all && git reset --hard origin/main && npm install && npm run $NPM_SCRIPT"
+ExecStart=/bin/bash -c "npm install && npm run $NPM_SCRIPT"
 Restart=always
 RestartSec=5
 LimitNOFILE=65535
 Environment=OMP_NUM_THREADS=32
-StartLimitBurst=5
-StartLimitIntervalSec=60
 
 [Install]
 WantedBy=default.target
