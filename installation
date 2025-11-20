@@ -2,7 +2,7 @@
 set -e
 
 # ==============================
-# AST Miner Installation Optimisée
+# AST Miner Installation Optimisée - Multi-rig
 # ==============================
 
 echo "=== AST Miner Installation - Début ==="
@@ -11,29 +11,36 @@ echo "=== AST Miner Installation - Début ==="
 sudo apt update
 sudo apt install -y git curl wget build-essential numactl gpg jq screen ca-certificates openssl linux-tools-common linux-tools-$(uname -r)
 
-# 2️⃣ Installer NVM pour l'utilisateur courant
+# 2️⃣ Installer ou mettre à jour NVM
 export NVM_DIR="$HOME/.nvm"
 if [ ! -d "$NVM_DIR" ]; then
   echo "Installation de NVM..."
   wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.9/install.sh | bash
+else
+  echo "Mise à jour de NVM..."
+  cd "$NVM_DIR"
+  git fetch origin
+  git checkout v0.39.9
 fi
 
 # Charger NVM
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
-# 3️⃣ Installer Node.js LTS (v24) et npm
+# 3️⃣ Installer ou mettre à jour Node.js LTS (v24) et npm
 echo "Installation de Node.js LTS..."
-nvm install --lts
+nvm install --lts --reinstall-packages-from=default
 nvm use --lts
 nvm alias default lts/*
 echo "Node $(node -v) | npm $(npm -v) installé"
 
-# 4️⃣ Cloner le repo AST Miner
+# 4️⃣ Cloner ou mettre à jour le repo AST Miner
 if [ ! -d "/opt/ast-miner-cli" ]; then
   sudo git clone https://github.com/snailovv/astatine_miner_optimised.git /opt/ast-miner-cli
 else
   echo "Mise à jour du repo existant..."
-  cd /opt/ast-miner-cli && sudo git pull
+  cd /opt/ast-miner-cli
+  sudo git reset --hard
+  sudo git pull
 fi
 cd /opt/ast-miner-cli
 
@@ -56,13 +63,13 @@ if [ ! -f /etc/astminer/seed.gpg ]; then
   echo "Seed chiffrée et stockée dans /etc/astminer/seed.gpg"
 fi
 
-# 8️⃣ Création du script de lancement dans screen
+# 8️⃣ Création du script de lancement dans screen avec optimisation Ryzen
 sudo tee /usr/local/bin/astminer-run.sh >/dev/null <<'EOF'
 #!/bin/bash
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 cd /opt/ast-miner-cli
-# Lancer le miner dans screen avec optimisation CPU pour Ryzen
+# Lancer le miner dans screen avec optimisation CPU Ryzen 9950X
 screen -dmS astatine numactl --interleave=all npm start
 EOF
 sudo chmod +x /usr/local/bin/astminer-run.sh
