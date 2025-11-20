@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+set -e
+
+echo "=== AST Miner Installation - Début ==="
+
+# -----------------------------
+# 1️⃣ Installer dépendances système
+# -----------------------------
+sudo apt update
+sudo apt install -y git curl wget build-essential numactl gpg jq screen ca-certificates openssl linux-tools-common linux-tools-$(uname -r)
+
+# -----------------------------
+# 2️⃣ Installer NVM si absent et Node LTS
+# -----------------------------
+export NVM_DIR="$HOME/.nvm"
+if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+    echo "Installation de NVM..."
+    wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.9/install.sh | bash
+fi
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+echo "Installation de la dernière version LTS de Node.js..."
+nvm install --lts
+nvm use --lts
+nvm alias default 'lts/*'
+
+echo "Mise à jour de npm..."
+npm install -g npm@latest
+
+echo "Node $(node -v) | npm $(npm -v) installé"
+
+# -----------------------------
+# 3️⃣ Créer utilisateur astminer si nécessaire
+# -----------------------------
+AST_USER="astminer"
+if ! id -u "$AST_USER" >/dev/null 2>&1; then
+    sudo useradd -m -s /bin/bash "$AST_USER"
+fi
+
+# -----------------------------
+# 4️⃣ Cloner ou mettre à jour AST Miner
+# -----------------------------
+AST_DIR="/opt/ast-miner-cli"
+if [ ! -d "$AST_DIR" ]; then
+    sudo git clone https://github.com/Jecta-ai/ast-miner-cli.git "$AST_DIR"
+else
+    cd "$AST_DIR"
+    sudo git fetch --all
+    sudo git reset --hard origin/main
+fi
+
+cd "$AST_DIR"
+sudo npm install --legacy-peer-deps
+
+# -----------------------------
+# 5️⃣ Créer répertoire sécurisé pour seed
+# -----------------------------
+SEED_DIR="/etc/astminer"
+SEED_FILE="$SEED_DIR/seed.gpg"
+sudo mkdir -p "$SEED_DIR"
+sudo chown "$AST_USER":"$AST_USER" "$SEED_DIR"
+sudo chmod 700 "$SEED_DIR"
+
+if [ ! -f "$SEED_FILE" ]; then
+    echo "=== Entrer votre seed phrase ==="
+    sudo -u "$AST_USER" bash -c "
+        read -s -p 'Seed: ' SEED
+        echo
+        echo \"\$SEED\" | gpg --symmetric --batch --yes --passphrase '' -o '$SEED_FILE'
+        echo 'Seed chiffrée et stockée dans $SEED_FILE'
+    "
+fi
+
+# -----------------------------
+# 6️⃣ Script de lancement dans screen
+# -----------------------------
+AST_SCREEN="astatine"
+RUN_SCRIPT="/usr/local/bin/astminer-run.sh"
+
+sudo tee "$RUN_SCRIPT" > /dev/null <<EOF
+#!/usr/bin/env bash
+export NVM_DIR="\$HOME/.nvm"
+[ -s "\$NVM_DIR/nvm.sh" ] && \. "\$NVM_DIR/nvm.sh"
+cd $AST_DIR
+numactl --interleave=all screen -dmS $AST_SCREEN npm start
+EOF
+
+sudo chmod +x "$RUN_SCRIPT"
+sudo chown "$AST_USER":"$AST_USER" "$RUN_SCRIPT"
+
+# -----------------------------
+# 7️⃣ Service systemd pour auto-start
+# -----------------------------
+AST_SERVICE="/etc/systemd/system/astminer.service"
+
+sudo tee "$AST_SERVICE" > /dev/null <<EOF
+[Unit]
+Description=AST Astatine Miner
+After=network.target
+
+[Service]
+Type=forking
+User=$AST_USER
+ExecStart=$RUN_SCRIPT
+Restart=always
+RestartSec=10
+Environment=PATH=/home/$AST_USER/.nvm/versions/node/$(nvm version)/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable astminer.service
+sudo systemctl start astminer.service
+
+echo "=== INSTALLATION COMPLETE ==="
+echo "Le miner est lancé dans screen '$AST_SCREEN' et gère automatiquement la seed chiffrée."
+echo "Pour vérifier les logs : sudo journalctl -u astminer -f"
+echo "Pour accéder au screen : sudo -u $AST_USER screen -r $AST_SCREEN"
