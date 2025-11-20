@@ -2,14 +2,14 @@
 set -e
 
 # ------------------------------
-# Variables à adapter si besoin
+# Variables
 # ------------------------------
 INSTALL_DIR="$HOME/miner/astatine"
 SCREEN_NAME="astatine"
 THREADS=24
 
 # ------------------------------
-# Création du dossier d'installation
+# Création du dossier
 # ------------------------------
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
@@ -29,7 +29,7 @@ sudo apt update
 sudo apt install -y build-essential screen git
 
 # ------------------------------
-# Clone ou met à jour le repo officiel
+# Clone ou met à jour le repo officiel Astatine CLI
 # ------------------------------
 if [ ! -d "$INSTALL_DIR/.git" ]; then
     git clone https://github.com/astatinework/astatine-cli.git "$INSTALL_DIR"
@@ -43,7 +43,7 @@ fi
 npm install
 
 # ------------------------------
-# Demande la seed une seule fois
+# Demander la seed une seule fois
 # ------------------------------
 if [ ! -f "$INSTALL_DIR/.seed" ]; then
     read -sp "Entrez votre seed phrase: " USER_SEED
@@ -52,7 +52,7 @@ if [ ! -f "$INSTALL_DIR/.seed" ]; then
 fi
 
 # ------------------------------
-# Création du script de lancement
+# Script de lancement avec restart automatique
 # ------------------------------
 cat > "$INSTALL_DIR/run_miner.sh" <<EOL
 #!/bin/bash
@@ -67,7 +67,7 @@ EOL
 chmod +x "$INSTALL_DIR/run_miner.sh"
 
 # ------------------------------
-# Lancer le miner dans un screen
+# Lancer dans un screen
 # ------------------------------
 screen -dmS $SCREEN_NAME "$INSTALL_DIR/run_miner.sh"
 
