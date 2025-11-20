@@ -1,69 +1,72 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-set -e
-
-# --- Configuration ---
+# --- Variables ---
 INSTALL_DIR="$HOME/miner/astatine"
-SERVICE_NAME="astminer"
-SCREEN_NAME="astatine"
+SERVICE_FILE="$HOME/.config/systemd/user/astminer.service"
 
-# --- Créer le dossier d'installation ---
+# --- Préparation des dossiers ---
 mkdir -p "$INSTALL_DIR"
-cd "$INSTALL_DIR"
+cd "$INSTALL_DIR" || exit
 
-# --- Installer les dépendances de base ---
-echo "Installation des dépendances..."
-sudo apt update
-sudo apt install -y curl git build-essential screen nodejs npm
-
-# --- Node.js >=18 check ---
-NODE_VER=$(node -v | grep -oP '\d+')
-if [ "$NODE_VER" -lt 18 ]; then
-    echo "Node.js >=18 requis, installation..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+# --- Installer Node.js si besoin ---
+if ! command -v node &> /dev/null; then
+    echo "Node.js non trouvé. Installation..."
+    curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
     sudo apt install -y nodejs
 fi
 
-# --- Sélection du nombre de threads ---
-if [ ! -f "$INSTALL_DIR/thread_count.txt" ]; then
-    echo "Sélectionnez le nombre de threads pour le miner :"
-    select THREADS in 24 28 32; do
-        if [[ -n "$THREADS" ]]; then
-            echo "$THREADS" > "$INSTALL_DIR/thread_count.txt"
-            break
-        fi
-    done
-fi
-THREADS=$(cat "$INSTALL_DIR/thread_count.txt")
+# --- Installer dépendances ---
+sudo apt update
+sudo apt install -y git build-essential screen
 
-# --- Seed --- 
-if [ ! -f "$INSTALL_DIR/seed.txt" ]; then
-    read -sp "Entrez votre seed phrase: " USER_SEED
-    echo "$USER_SEED" > "$INSTALL_DIR/seed.txt"
+# --- Demander la seed une seule fois ---
+if [ ! -f "$INSTALL_DIR/.seed" ]; then
+    read -sp "Entrez votre seed phrase (elle sera stockée localement, pas sur GitHub) : " USER_SEED
+    echo "$USER_SEED" > "$INSTALL_DIR/.seed"
     echo
+else
+    USER_SEED=$(cat "$INSTALL_DIR/.seed")
 fi
 
-# --- Télécharger le miner CLI directement depuis Astatine ---
-echo "Téléchargement du miner..."
-curl -fsSL https://raw.githubusercontent.com/astminer/cli/main/miner.ts -o miner.ts
-curl -fsSL https://raw.githubusercontent.com/astminer/cli/main/tsconfig.miner.json -o tsconfig.miner.json
-npm install ts-node
+# --- Choix du nombre de threads ---
+echo "Choisissez le nombre de threads pour le mining :"
+echo "1) 24"
+echo "2) 28"
+echo "3) 32"
+read -p "Entrez le chiffre correspondant [1-3]: " THREAD_CHOICE
+case $THREAD_CHOICE in
+    1) THREADS=24 ;;
+    2) THREADS=28 ;;
+    3) THREADS=32 ;;
+    *) THREADS=24 ;;
+esac
+echo "Threads sélectionnés : $THREADS"
+
+# --- Cloner ou mettre à jour le miner ---
+if [ ! -d "$INSTALL_DIR/ast-cli-miner" ]; then
+    git clone https://github.com/Astatine-Project/ast-cli-miner.git
+else
+    cd ast-cli-miner || exit
+    git pull
+    cd ..
+fi
 
 # --- Créer script de lancement ---
-cat > "$INSTALL_DIR/run_miner.sh" <<EOL
-#!/usr/bin/env bash
-cd "$INSTALL_DIR"
+LAUNCH_SCRIPT="$INSTALL_DIR/run_miner.sh"
+cat > "$LAUNCH_SCRIPT" <<EOL
+#!/bin/bash
+cd "$INSTALL_DIR/ast-cli-miner"
 while true; do
-    ts-node -P tsconfig.miner.json miner.ts --threads $THREADS --seed "\$(cat seed.txt)"
-    echo "Le miner a planté. Redémarrage dans 10 secondes..."
+    ts-node -P tsconfig.miner.json miner.ts --threads $THREADS --seed "$USER_SEED"
+    echo "Miner planté, redémarrage dans 10 secondes..."
     sleep 10
 done
 EOL
 
-chmod +x "$INSTALL_DIR/run_miner.sh"
+chmod +x "$LAUNCH_SCRIPT"
 
-# --- Lancer dans screen ---
-echo "Démarrage du miner dans screen '$SCREEN_NAME'..."
-screen -dmS "$SCREEN_NAME" bash "$INSTALL_DIR/run_miner.sh"
+# --- Lancer dans un screen ---
+screen -dmS astatine bash "$LAUNCH_SCRIPT"
 
-echo "Installation terminée. Pour rejoindre le screen : screen -r $SCREEN_NAME"
+echo "Installation terminée. Le miner tourne maintenant dans un screen nommé 'astatine'."
+echo "Pour y accéder : screen -r astatine"
