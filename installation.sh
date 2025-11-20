@@ -2,7 +2,7 @@
 set -e
 
 # ============================================
-# Script d'installation et configuration
+# Script d'installation et configuration avancée
 # pour ast-miner-cli sur Ubuntu Server LTS
 # Optimisé Ryzen 9 9950X, 32 Go DDR5
 # ============================================
@@ -34,17 +34,14 @@ ensure_package software-properties-common
 ensure_package pkg-config
 ensure_package libssl-dev
 
-# --- Installation de Node.js (dernier LTS) ---
-if ! command -v node >/dev/null 2>&1; then
-    echo "[INFO] Installation de Node.js LTS..."
+# --- Installation / mise à jour Node.js LTS ---
+NODE_VERSION=$(node -v 2>/dev/null || echo "")
+if [[ "$NODE_VERSION" == "" ]]; then
+    echo "[INFO] Node.js non installé. Installation LTS..."
     curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
     sudo apt-get install -y nodejs
-fi
-
-# --- Vérification de npm ---
-if ! command -v npm >/dev/null 2>&1; then
-    echo "[ERROR] npm non installé, vérifiez Node.js"
-    exit 1
+else
+    echo "[INFO] Node.js installé : $NODE_VERSION"
 fi
 
 # --- Clonage ou mise à jour du repo du miner ---
@@ -54,13 +51,9 @@ if [ ! -d "$INSTALL_DIR" ]; then
 else
     echo "[INFO] Mise à jour du repo du miner..."
     cd "$INSTALL_DIR"
-    git pull
+    git fetch --all
+    git reset --hard origin/main
 fi
-
-# --- Installation des dépendances npm ---
-echo "[INFO] Installation des dépendances npm..."
-cd "$INSTALL_DIR"
-npm install
 
 # --- Configuration de la seed phrase ---
 if [ ! -f "$ENV_FILE" ]; then
@@ -77,7 +70,7 @@ fi
 echo "[INFO] Création du service systemd..."
 sudo tee "$SERVICE_FILE" >/dev/null <<EOF
 [Unit]
-Description=AST Miner CLI
+Description=AST Miner CLI Avancé
 After=network.target
 
 [Service]
@@ -85,10 +78,11 @@ Type=simple
 User=$USER
 EnvironmentFile=$ENV_FILE
 WorkingDirectory=$INSTALL_DIR
-ExecStart=/usr/bin/npm run start
+ExecStart=/bin/bash -c "git fetch --all && git reset --hard origin/main && npm install && npm run start"
 Restart=always
 RestartSec=5
 LimitNOFILE=65535
+Environment=OMP_NUM_THREADS=32
 
 [Install]
 WantedBy=multi-user.target
@@ -99,12 +93,6 @@ echo "[INFO] Activation et démarrage du service..."
 sudo systemctl daemon-reload
 sudo systemctl enable astminer.service
 sudo systemctl start astminer.service
-
-# --- Optimisation CPU ---
-echo "[INFO] Optimisation du miner pour Ryzen 9 9950X..."
-# Le miner Node.js utilise souvent toutes les threads, on peut set des variables si le miner le supporte
-export OMP_NUM_THREADS=32  # Ajuster selon le nombre de threads logiques
-echo "export OMP_NUM_THREADS=32" >> "$ENV_FILE"
 
 echo "[INFO] Installation terminée avec succès !"
 echo "Vérifiez les logs avec : sudo journalctl -u astminer.service -f"
