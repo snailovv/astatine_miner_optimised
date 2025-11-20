@@ -2,22 +2,21 @@
 set -e
 
 # ============================================
-# AST Miner CLI Installation Complète
+# AST Miner CLI Installation Complète (Version propre)
 # Ubuntu LTS, Ryzen 9 9950X, 32 Go DDR5
-# Installation dans /miner/astatine
+# Installation dans ~/miner/astatine
 # ============================================
 
 # --- Variables ---
-INSTALL_BASE="/miner"
+INSTALL_BASE="$HOME/miner"
 INSTALL_DIR="$INSTALL_BASE/astatine"
 MINER_REPO="https://github.com/Jecta-ai/ast-miner-cli.git"
 ENV_FILE="$INSTALL_DIR/.astminer_env"
-SERVICE_FILE="/etc/systemd/system/astminer.service"
-USER_NAME="s_nailo_vv"  # ton utilisateur normal
+SERVICE_FILE="$HOME/.config/systemd/user/astminer.service"
+USER_NAME="$USER"
 
 # --- Créer le dossier d'installation ---
-sudo mkdir -p "$INSTALL_DIR"
-sudo chown $USER_NAME:$USER_NAME "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
 # --- Installer les paquets nécessaires ---
@@ -48,7 +47,7 @@ else
     git reset --hard origin/main
 fi
 
-# --- Autoriser Git safe directory ---
+# --- Autoriser Git safe directory (pour le user) ---
 git config --global --add safe.directory "$INSTALL_DIR"
 
 # --- Installer les dépendances npm ---
@@ -77,15 +76,15 @@ else
 fi
 echo "[INFO] Script npm choisi : $NPM_SCRIPT"
 
-# --- Création du service systemd ---
-sudo tee "$SERVICE_FILE" >/dev/null <<EOF
+# --- Création du service systemd utilisateur ---
+mkdir -p "$HOME/.config/systemd/user"
+tee "$SERVICE_FILE" >/dev/null <<EOF
 [Unit]
-Description=AST Miner CLI Avancé
+Description=AST Miner CLI Avancé (User Service)
 After=network.target
 
 [Service]
 Type=simple
-User=$USER_NAME
 EnvironmentFile=$ENV_FILE
 WorkingDirectory=$INSTALL_DIR
 ExecStart=/bin/bash -c "git fetch --all && git reset --hard origin/main && npm install && npm run $NPM_SCRIPT"
@@ -97,14 +96,14 @@ StartLimitBurst=5
 StartLimitIntervalSec=60
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 EOF
 
-# --- Activation et démarrage du service ---
-sudo systemctl daemon-reload
-sudo systemctl enable astminer.service
-sudo systemctl start astminer.service
+# --- Activation et démarrage du service utilisateur ---
+systemctl --user daemon-reload
+systemctl --user enable astminer.service
+systemctl --user start astminer.service
 
 echo "[INFO] Installation terminée avec succès !"
-echo "Pour suivre les logs en temps réel : sudo journalctl -u astminer.service -f"
-echo "Pour vérifier le statut : sudo systemctl status astminer.service"
+echo "Pour suivre les logs en temps réel : journalctl --user -u astminer.service -f"
+echo "Pour vérifier le statut : systemctl --user status astminer.service"
