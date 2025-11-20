@@ -1,75 +1,69 @@
-#!/bin/bash
-
-# ===============================
-# Installation Astatine Miner Optimisé
-# ===============================
+#!/usr/bin/env bash
 
 set -e
 
-# --- Vérification de Node.js ---
-if ! command -v node >/dev/null 2>&1; then
-    echo "Node.js non trouvé. Installation..."
-    curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-    sudo apt-get install -y nodejs build-essential git screen
-else
-    echo "Node.js déjà installé."
+# --- Configuration ---
+INSTALL_DIR="$HOME/miner/astatine"
+SERVICE_NAME="astminer"
+SCREEN_NAME="astatine"
+
+# --- Créer le dossier d'installation ---
+mkdir -p "$INSTALL_DIR"
+cd "$INSTALL_DIR"
+
+# --- Installer les dépendances de base ---
+echo "Installation des dépendances..."
+sudo apt update
+sudo apt install -y curl git build-essential screen nodejs npm
+
+# --- Node.js >=18 check ---
+NODE_VER=$(node -v | grep -oP '\d+')
+if [ "$NODE_VER" -lt 18 ]; then
+    echo "Node.js >=18 requis, installation..."
+    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+    sudo apt install -y nodejs
 fi
 
-# --- Demande du nombre de threads ---
-echo "Choisir le nombre de threads (24, 28 ou 32) : "
-read -r THREADS
-if [[ ! "$THREADS" =~ ^(24|28|32)$ ]]; then
-    echo "Nombre invalide, utilisation par défaut : 24 threads"
-    THREADS=24
+# --- Sélection du nombre de threads ---
+if [ ! -f "$INSTALL_DIR/thread_count.txt" ]; then
+    echo "Sélectionnez le nombre de threads pour le miner :"
+    select THREADS in 24 28 32; do
+        if [[ -n "$THREADS" ]]; then
+            echo "$THREADS" > "$INSTALL_DIR/thread_count.txt"
+            break
+        fi
+    done
+fi
+THREADS=$(cat "$INSTALL_DIR/thread_count.txt")
+
+# --- Seed --- 
+if [ ! -f "$INSTALL_DIR/seed.txt" ]; then
+    read -sp "Entrez votre seed phrase: " USER_SEED
+    echo "$USER_SEED" > "$INSTALL_DIR/seed.txt"
+    echo
 fi
 
-# --- Demande de la seed (une seule fois) ---
-if [ ! -f seed.txt ]; then
-    echo "Entrez votre 12-word seed : "
-    read -r SEED
-    echo "$SEED" > seed.txt
-    chmod 600 seed.txt
-fi
+# --- Télécharger le miner CLI directement depuis Astatine ---
+echo "Téléchargement du miner..."
+curl -fsSL https://raw.githubusercontent.com/astminer/cli/main/miner.ts -o miner.ts
+curl -fsSL https://raw.githubusercontent.com/astminer/cli/main/tsconfig.miner.json -o tsconfig.miner.json
+npm install ts-node
 
-# --- Clonage ou mise à jour du miner ---
-if [ ! -d ast-cli-miner ]; then
-    git clone https://github.com/astminer/ast-cli-miner.git
-fi
-cd ast-cli-miner
-git pull || true
-
-# --- Installation des dépendances npm ---
-npm install
-
-# --- Création du script de démarrage optimisé ---
-cat > start_miner.sh <<EOL
-#!/bin/bash
-cd ~/miner/astatine/ast-cli-miner
-export AST_SEED=\$(cat ~/miner/astatine/seed.txt)
-screen -dmS astatine bash -c "ts-node -P tsconfig.miner.json miner.ts --threads $THREADS"
+# --- Créer script de lancement ---
+cat > "$INSTALL_DIR/run_miner.sh" <<EOL
+#!/usr/bin/env bash
+cd "$INSTALL_DIR"
+while true; do
+    ts-node -P tsconfig.miner.json miner.ts --threads $THREADS --seed "\$(cat seed.txt)"
+    echo "Le miner a planté. Redémarrage dans 10 secondes..."
+    sleep 10
+done
 EOL
 
-chmod +x start_miner.sh
+chmod +x "$INSTALL_DIR/run_miner.sh"
 
-# --- Création du service systemd pour restart automatique ---
-cat > ~/.config/systemd/user/astminer.service <<EOL
-[Unit]
-Description=Astatine Miner Optimisé
-After=network.target
+# --- Lancer dans screen ---
+echo "Démarrage du miner dans screen '$SCREEN_NAME'..."
+screen -dmS "$SCREEN_NAME" bash "$INSTALL_DIR/run_miner.sh"
 
-[Service]
-Type=simple
-ExecStart=$HOME/miner/astatine/start_miner.sh
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=default.target
-EOL
-
-# --- Reload et enable du service ---
-systemctl --user daemon-reload
-systemctl --user enable astminer.service
-systemctl --user start astminer.service
-
-echo "Installation terminée ! Le miner tourne dans un screen nommé 'astatine'."
+echo "Installation terminée. Pour rejoindre le screen : screen -r $SCREEN_NAME"
