@@ -4,6 +4,7 @@ set -e
 # ============================================
 # Script d'installation complète AST Miner CLI
 # Ubuntu LTS, Ryzen 9 9950X, 32 Go DDR5
+# Installation dans /miner/astatine
 # ============================================
 
 # --- Variables ---
@@ -12,9 +13,11 @@ INSTALL_DIR="$INSTALL_BASE/astatine"
 MINER_REPO="https://github.com/Jecta-ai/ast-miner-cli.git"
 ENV_FILE="$INSTALL_DIR/.astminer_env"
 SERVICE_FILE="/etc/systemd/system/astminer.service"
+USER_NAME="s_nailo_vv"  # ton utilisateur normal
 
 # --- Créer le dossier d'installation ---
-mkdir -p "$INSTALL_DIR"
+sudo mkdir -p "$INSTALL_DIR"
+sudo chown $USER_NAME:$USER_NAME "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
 # --- Fonction pour installer un paquet si nécessaire ---
@@ -68,21 +71,7 @@ else
     echo "[INFO] Seed phrase déjà configurée."
 fi
 
-# --- Détection du script npm à lancer ---
-echo "[INFO] Détection des scripts npm disponibles..."
-AVAILABLE_SCRIPTS=$(npm run)
-# Par défaut on prend "miner" si il existe, sinon "start"
-if echo "$AVAILABLE_SCRIPTS" | grep -q "miner"; then
-    NPM_SCRIPT="miner"
-elif echo "$AVAILABLE_SCRIPTS" | grep -q "start"; then
-    NPM_SCRIPT="start"
-else
-    echo "[ERROR] Aucun script npm 'start' ou 'miner' trouvé. Vérifiez votre package.json"
-    exit 1
-fi
-echo "[INFO] Script npm choisi pour systemd : $NPM_SCRIPT"
-
-# --- Création du service systemd ---
+# --- Création du service systemd corrigé ---
 sudo tee "$SERVICE_FILE" >/dev/null <<EOF
 [Unit]
 Description=AST Miner CLI Avancé
@@ -90,14 +79,16 @@ After=network.target
 
 [Service]
 Type=simple
-User=$USER
+User=$USER_NAME
 EnvironmentFile=$ENV_FILE
 WorkingDirectory=$INSTALL_DIR
-ExecStart=/bin/bash -c "git fetch --all && git reset --hard origin/main && npm install && npm run $NPM_SCRIPT"
+ExecStart=/bin/bash -c "git fetch --all && git reset --hard origin/main && npm install && npm run mine"
 Restart=always
 RestartSec=5
 LimitNOFILE=65535
 Environment=OMP_NUM_THREADS=32
+StartLimitBurst=5
+StartLimitIntervalSec=60
 
 [Install]
 WantedBy=multi-user.target
