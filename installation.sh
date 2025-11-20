@@ -32,12 +32,12 @@ fi
 # Installer les dépendances npm
 npm install
 
-# Lancer le miner dans un screen
-screen -dmS astminer npm start
+# Lancer le miner dans un screen interactif pour saisir la passphrase
+echo "Lancement du miner dans screen interactif nommé 'astminer'..."
+screen -S astminer -dm bash -c "cd $MINER_DIR && npm start"
 
 echo "=== INSTALLATION TERMINEE ==="
-echo "Le miner est lancé dans le screen nommé 'astminer'."
-echo "Pour rejoindre le screen et saisir la passphrase si demandée :"
+echo "Pour rejoindre le screen et saisir la passphrase :"
 echo "  screen -r astminer"
-echo "Pour détacher du screen sans arrêter le miner : Ctrl+A puis D"
+echo "Pour détacher sans arrêter le miner : Ctrl+A puis D"
 echo "Pour suivre les logs : sudo journalctl -u astminer -f"
