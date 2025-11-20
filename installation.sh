@@ -1,82 +1,87 @@
 #!/bin/bash
 set -e
 
-# ==============================
-# AST Miner Installation Optimisée - Multi-rig
-# ==============================
-
 echo "=== AST Miner Installation - Début ==="
 
-# 1️⃣ Installer les dépendances système
-sudo apt update
-sudo apt install -y git curl wget build-essential numactl gpg jq screen ca-certificates openssl linux-tools-common linux-tools-$(uname -r)
+# Mettre à jour le système et installer dépendances
+sudo apt update && sudo apt install -y git curl wget build-essential numactl gpg jq screen ca-certificates openssl linux-tools-common linux-tools-$(uname -r)
 
-# 2️⃣ Installer ou mettre à jour NVM
+# Installer NVM (dernière version stable)
 export NVM_DIR="$HOME/.nvm"
 if [ ! -d "$NVM_DIR" ]; then
-  echo "Installation de NVM..."
-  wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.9/install.sh | bash
-else
-  echo "Mise à jour de NVM..."
-  cd "$NVM_DIR"
-  git fetch origin
-  git checkout v0.39.9
+    echo "Installation de la dernière version stable de NVM..."
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
 fi
-
-# Charger NVM
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
-# 3️⃣ Installer ou mettre à jour Node.js LTS (v24) et npm
-echo "Installation de Node.js LTS..."
-nvm install --lts --reinstall-packages-from=default
+# Installer la dernière LTS de Node.js via NVM
+echo "Installation de la dernière LTS de Node.js..."
+nvm install --lts
 nvm use --lts
-nvm alias default lts/*
+nvm alias default 'lts/*'
+npm install -g npm
+
 echo "Node $(node -v) | npm $(npm -v) installé"
 
-# 4️⃣ Cloner ou mettre à jour le repo AST Miner
-if [ ! -d "/opt/ast-miner-cli" ]; then
-  sudo git clone https://github.com/snailovv/astatine_miner_optimised.git /opt/ast-miner-cli
+# Créer l'utilisateur et dossier du miner
+sudo useradd -m -s /bin/bash astminer || true
+sudo mkdir -p /opt/ast-miner-cli
+sudo chown -R astminer:astminer /opt/ast-miner-cli
+
+# Cloner ou mettre à jour le repo du miner
+if [ -d "/opt/ast-miner-cli/.git" ]; then
+    echo "Mise à jour du repo existant..."
+    sudo -u astminer git -C /opt/ast-miner-cli pull
 else
-  echo "Mise à jour du repo existant..."
-  cd /opt/ast-miner-cli
-  sudo git reset --hard
-  sudo git pull
+    echo "Clonage du repo du miner..."
+    sudo -u astminer git clone https://github.com/snailovv/astatine_miner_optimised.git /opt/ast-miner-cli
 fi
-cd /opt/ast-miner-cli
 
-# 5️⃣ Installer les packages npm (sans sudo)
-npm install
+# Installer les dépendances npm
+sudo -u astminer bash -c "cd /opt/ast-miner-cli && npm install"
 
-# 6️⃣ Créer l'utilisateur astminer et dossier seed si nécessaire
-if ! id "astminer" &>/dev/null; then
-  sudo useradd -m -s /bin/bash astminer
-fi
+# Créer le dossier de configuration et seed
 sudo mkdir -p /etc/astminer
-sudo chown $USER:$USER /etc/astminer
+sudo chown -R astminer:astminer /etc/astminer
 
-# 7️⃣ Saisie et chiffrement de la seed
-if [ ! -f /etc/astminer/seed.gpg ]; then
-  echo "=== ONE-TIME: Entrer votre seed phrase ==="
-  read -s -p "Entrez votre seed phrase: " SEED
-  echo
-  echo "$SEED" | gpg --symmetric --cipher-algo AES256 -o /etc/astminer/seed.gpg
-  echo "Seed chiffrée et stockée dans /etc/astminer/seed.gpg"
-fi
+# Demander la seed (une seule fois)
+echo "=== ONE-TIME: Entrer seed phrase ==="
+sudo -u astminer bash -c "read -s -p 'Entrez votre seed phrase : ' SEED; echo; echo \$SEED | gpg --symmetric --cipher-algo AES256 -o /etc/astminer/seed.gpg"
 
-# 8️⃣ Création du script de lancement dans screen avec optimisation Ryzen
-sudo tee /usr/local/bin/astminer-run.sh >/dev/null <<'EOF'
+echo "Seed chiffrée et stockée dans /etc/astminer/seed.gpg"
+
+# Créer un script de lancement du miner
+cat << 'EOF' | sudo tee /usr/local/bin/astminer-run.sh
 #!/bin/bash
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 cd /opt/ast-miner-cli
-# Lancer le miner dans screen avec optimisation CPU Ryzen 9950X
-screen -dmS astatine numactl --interleave=all npm start
+screen -dmS astatine sudo -u astminer node miner.js
 EOF
+
 sudo chmod +x /usr/local/bin/astminer-run.sh
 
-# 9️⃣ Lancer le miner
-/usr/local/bin/astminer-run.sh
+# Créer le service systemd
+cat << 'EOF' | sudo tee /etc/systemd/system/astminer.service
+[Unit]
+Description=AST Astatine Miner
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/astminer-run.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable astminer
+sudo systemctl start astminer
 
 echo "=== INSTALLATION COMPLETE ==="
-echo "Le miner tourne dans screen nommé 'astatine'."
-echo "Pour rejoindre le screen: screen -r astatine"
+echo "Vérifier logs : sudo journalctl -u astminer -f"
+echo "Rejoindre le screen du miner : screen -r astatine"
